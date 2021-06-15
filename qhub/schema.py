@@ -1,6 +1,9 @@
 import enum
 import typing
 
+from abc import ABC
+import ipaddress
+
 import pydantic
 from pydantic import validator, root_validator
 from qhub.utils import namestr_regex, check_for_duplicates
@@ -352,6 +355,8 @@ class Main(Base):
     provider: ProviderEnum
     ci_cd: typing.Optional[CICD]
     domain: str
+    load_balancer_ip: typing.Optional[ipaddress.IPv4Address]
+    load_balancer_annotations: typing.Optional[typing.Dict[str, str]]
     terraform_state: typing.Optional[TerraformState]
     terraform_modules: typing.Optional[
         TerraformModules
