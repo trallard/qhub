@@ -2,6 +2,7 @@ import logging
 import os
 
 import keycloak
+import rich
 
 from .schema import verify
 from .utils import load_yaml
@@ -13,7 +14,7 @@ def do_keycloak(config_filename, *args):
     config = load_yaml(config_filename)
     verify(config)
 
-    # supress insecure warnings
+    # suppress insecure warnings
     import urllib3
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -55,9 +56,11 @@ def create_user(
             {"type": "password", "value": password, "temporary": False}
         ]
     else:
-        print(f"Creating user={username} without password (none supplied)")
+        rich.print(
+            f"Creating user=[green]{username}[/green] without password (none supplied)"
+        )
     keycloak_admin.create_user(payload)
-    print(f"Created user={username}")
+    rich.print(f"Created user=[green]{username}[/green]")
 
 
 def list_users(keycloak_admin: keycloak.KeycloakAdmin):

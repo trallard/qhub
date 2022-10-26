@@ -1,6 +1,8 @@
-import ssl
 import re
+import ssl
+import string
 
+import escapism
 import requests
 
 from tests_deployment import constants
@@ -8,7 +10,9 @@ from tests_deployment import constants
 
 def get_jupyterhub_session():
     session = requests.Session()
-    r = session.get(f"https://{constants.QHUB_HOSTNAME}/hub/oauth_login", verify=False)
+    r = session.get(
+        f"https://{constants.NEBARI_HOSTNAME}/hub/oauth_login", verify=False
+    )
     auth_url = re.search('action="([^"]+)"', r.content.decode("utf8")).group(1)
 
     r = session.post(
@@ -27,9 +31,9 @@ def get_jupyterhub_session():
 def get_jupyterhub_token(note="jupyterhub-tests-deployment"):
     session = get_jupyterhub_session()
     r = session.post(
-        f"https://{constants.QHUB_HOSTNAME}/hub/api/users/{constants.KEYCLOAK_USERNAME}/tokens",
+        f"https://{constants.NEBARI_HOSTNAME}/hub/api/users/{constants.KEYCLOAK_USERNAME}/tokens",
         headers={
-            "Referer": f"https://{constants.QHUB_HOSTNAME}/hub/token",
+            "Referer": f"https://{constants.NEBARI_HOSTNAME}/hub/token",
         },
         json={
             "note": note,
@@ -57,3 +61,11 @@ def monkeypatch_ssl_context():
 
     sslcontext = ssl.create_default_context()
     ssl.create_default_context = create_default_context(sslcontext)
+
+
+def escape_string(s):
+    # https://github.com/jupyterhub/kubespawner/blob/main/kubespawner/spawner.py#L1681
+    # Make sure username and servername match the restrictions for DNS labels
+    # Note: '-' is not in safe_chars, as it is being used as escape character
+    safe_chars = set(string.ascii_lowercase + string.digits)
+    return escapism.escape(s, safe=safe_chars, escape_char="-").lower()

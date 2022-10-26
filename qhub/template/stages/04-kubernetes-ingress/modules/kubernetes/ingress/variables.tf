@@ -24,20 +24,11 @@ variable "traefik-image" {
     image = string
     tag   = string
   })
-  default = {
-    image = "traefik"
-    tag   = "2.4.8"
-  }
 }
 
 variable "loglevel" {
   description = "traefik log level"
   default     = "WARN"
-}
-
-variable "enable-certificates" {
-  description = "Enable certificates"
-  default     = false
 }
 
 variable "acme-email" {
@@ -57,4 +48,28 @@ variable "certificate-secret-name" {
   description = "Kubernetes secret used for certificate"
   type        = string
   default     = null
+}
+
+variable "load-balancer-ip" {
+  description = "IP Address of the load balancer"
+  type        = string
+  default     = null
+}
+
+variable "load-balancer-annotations" {
+  description = "Annotations for the load balancer"
+  type        = map(string)
+  default     = null
+}
+
+variable "certificate-service" {
+  description = "The certificate service to use"
+  type        = string
+  default     = "self-signed"
+}
+
+variable "additional-arguments" {
+  description = "Additional command line arguments to supply to traefik ingress"
+  type        = list(string)
+  default     = []
 }

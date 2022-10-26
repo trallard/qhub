@@ -1,18 +1,19 @@
-import sys
-import pathlib
 import functools
-import os
-import shutil
-from typing import List, Dict
 import hashlib
+import os
+import pathlib
+import shutil
+import sys
+from typing import Dict, List
 
+from rich import print
+from rich.table import Table
 from ruamel.yaml import YAML
 
-from qhub.stages import tf_objects
 from qhub.deprecate import DEPRECATED_FILE_PATHS
-
-from qhub.provider.cicd.github import gen_qhub_ops, gen_qhub_linter
+from qhub.provider.cicd.github import gen_qhub_linter, gen_qhub_ops
 from qhub.provider.cicd.gitlab import gen_gitlab_ci
+from qhub.stages import tf_objects
 
 
 def render_template(output_directory, config_filename, force=False, dry_run=False):
@@ -58,7 +59,6 @@ def render_template(output_directory, config_filename, force=False, dry_run=Fals
     contents = render_contents(config)
 
     directories = [
-        "image",
         f"stages/02-infrastructure/{config['provider']}",
         "stages/03-kubernetes-initialize",
         "stages/04-kubernetes-ingress",
@@ -67,7 +67,10 @@ def render_template(output_directory, config_filename, force=False, dry_run=Fals
         "stages/07-kubernetes-services",
         "stages/08-qhub-tf-extensions",
     ]
-    if config["provider"] != "local" and config["terraform_state"]["type"] == "remote":
+    if (
+        config["provider"] not in {"existing", "local"}
+        and config["terraform_state"]["type"] == "remote"
+    ):
         directories.append(f"stages/01-terraform-state/{config['provider']}")
 
     source_dirs = [os.path.join(str(template_directory), _) for _ in directories]
@@ -91,21 +94,28 @@ def render_template(output_directory, config_filename, force=False, dry_run=Fals
     )
 
     if new:
-        print("The following files will be created:")
+        table = Table("The following files will be created:", style="deep_sky_blue1")
         for filename in sorted(new):
-            print(f"   CREATED   {filename}")
+            table.add_row(filename, style="green")
+        print(table)
     if updated:
-        print("The following files will be updated:")
+        table = Table("The following files will be updated:", style="deep_sky_blue1")
         for filename in sorted(updated):
-            print(f"   UPDATED   {filename}")
+            table.add_row(filename, style="green")
+        print(table)
     if deleted:
-        print("The following files will be deleted:")
+        table = Table("The following files will be deleted:", style="deep_sky_blue1")
         for filename in sorted(deleted):
-            print(f"   DELETED   {filename}")
+            table.add_row(filename, style="green")
+        print(table)
     if untracked:
-        print("The following files are untracked (only exist in output directory):")
+        table = Table(
+            "The following files are untracked (only exist in output directory):",
+            style="deep_sky_blue1",
+        )
         for filename in sorted(updated):
-            print(f"   UNTRACKED {filename}")
+            table.add_row(filename, style="green")
+        print(table)
 
     if dry_run:
         print("dry-run enabled no files will be created, updated, or deleted")
@@ -163,7 +173,30 @@ def render_contents(config: Dict):
                 }
             )
 
+    contents.update(gen_gitignore(config))
+
     return contents
+
+
+def gen_gitignore(config):
+    """
+    Generate `.gitignore` file.
+    Add files as needed.
+    """
+
+    from inspect import cleandoc
+
+    filestoignore = """
+        # ignore terraform state
+        .terraform
+        terraform.tfstate
+        terraform.tfstate.backup
+        .terraform.tfstate.lock.info
+
+        # python
+        __pycache__
+    """
+    return {".gitignore": cleandoc(filestoignore)}
 
 
 def gen_cicd(config):
@@ -208,13 +241,13 @@ def inspect_files(
 
     Args:
         source_dirs (str): The source dir used as base for comparssion
-        output_dirs (str): The destionation dir wich will be matched with
+        output_dirs (str): The destination dir which will be matched with
         source_base_dir (str): Relative base path to source directory
         output_base_dir (str): Relative base path to output directory
         ignore_filenames (list[str]): Filenames to ignore while comparing for changes
         ignore_directories (list[str]): Directories to ignore while comparing for changes
         deleted_paths (list[str]): Paths that if exist in output directory should be deleted
-        contents (dict): filename to content mapping for dynmaically generated files
+        contents (dict): filename to content mapping for dynamically generated files
     """
     ignore_filenames = ignore_filenames or []
     ignore_directories = ignore_directories or []

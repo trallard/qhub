@@ -9,7 +9,13 @@ variable "namespace" {
 }
 
 variable "nfs_capacity" {
-  description = "Capacity of conda-store deployment"
+  description = "Capacity of conda-store filesystem"
+  type        = string
+  default     = "10Gi"
+}
+
+variable "minio_capacity" {
+  description = "Capacity of conda-store object storage"
   type        = string
   default     = "10Gi"
 }
@@ -29,15 +35,14 @@ variable "node-group" {
 }
 
 variable "conda-store-image" {
-  description = "Conda-store image"
-  type = object({
-    name = string
-    tag  = string
-  })
-  default = {
-    name = "quansight/conda-store-server"
-    tag  = "v0.3.10"
-  }
+  description = "Conda-Store image"
+  type        = string
+  default     = "quansight/conda-store-server"
+}
+
+variable "conda-store-image-tag" {
+  description = "Version of conda-store to use"
+  type        = string
 }
 
 variable "external-url" {
@@ -48,4 +53,26 @@ variable "external-url" {
 variable "realm_id" {
   description = "Keycloak realm to use for deploying openid client"
   type        = string
+}
+
+variable "extra-settings" {
+  description = "Additional traitlets settings to apply before extra-config traitlets code is run"
+  type        = map(any)
+  default     = {}
+}
+
+variable "extra-config" {
+  description = "Additional traitlets configuration code to be ran"
+  type        = string
+  default     = ""
+}
+
+variable "default-namespace-name" {
+  description = "Name of the default conda-store namespace"
+  type        = string
+}
+
+variable "services" {
+  description = "Map of services tokens and scopes for conda-store"
+  type        = map(any)
 }

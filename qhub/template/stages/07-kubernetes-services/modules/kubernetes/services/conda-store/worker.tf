@@ -77,6 +77,13 @@ resource "kubernetes_deployment" "worker" {
         labels = {
           role = "${var.name}-conda-store-worker"
         }
+
+        annotations = {
+          # This lets us autorestart when the conifg changes!
+          "checksum/config-map"         = sha256(jsonencode(kubernetes_config_map.conda-store-config.data))
+          "checksum/secret"             = sha256(jsonencode(kubernetes_secret.conda-store-secret.data))
+          "checksum/conda-environments" = sha256(jsonencode(kubernetes_config_map.conda-store-environments.data))
+        }
       }
 
       spec {
@@ -98,7 +105,7 @@ resource "kubernetes_deployment" "worker" {
 
         container {
           name  = "conda-store-worker"
-          image = "${var.conda-store-image.name}:${var.conda-store-image.tag}"
+          image = "${var.conda-store-image}:${var.conda-store-image-tag}"
 
           args = [
             "conda-store-worker",
@@ -119,6 +126,11 @@ resource "kubernetes_deployment" "worker" {
           volume_mount {
             name       = "storage"
             mount_path = "/home/conda"
+          }
+
+          volume_mount {
+            name       = "secret"
+            mount_path = "/var/lib/conda-store/"
           }
         }
 
@@ -159,6 +171,13 @@ resource "kubernetes_deployment" "worker" {
         }
 
         volume {
+          name = "secret"
+          secret {
+            secret_name = kubernetes_secret.conda-store-secret.metadata.0.name
+          }
+        }
+
+        volume {
           name = "environments"
           config_map {
             name = kubernetes_config_map.conda-store-environments.metadata.0.name
@@ -174,6 +193,10 @@ resource "kubernetes_deployment" "worker" {
             # claim_name = kubernetes_persistent_volume_claim.main.metadata.0.name
             claim_name = "${var.name}-conda-store-storage"
           }
+        }
+        security_context {
+          run_as_group = 0
+          run_as_user  = 0
         }
       }
     }

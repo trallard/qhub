@@ -1,19 +1,17 @@
 import logging
 import os
-import tempfile
-import textwrap
 import subprocess
+import textwrap
 
-from qhub.utils import (
-    check_cloud_credentials,
-    timer,
-    kubernetes_provider_context,
-    keycloak_provider_context,
-)
-from qhub.stages import checks, state_imports, input_vars
 from qhub.provider import terraform
 from qhub.provider.dns.cloudflare import update_record
-
+from qhub.stages import checks, input_vars, state_imports
+from qhub.utils import (
+    check_cloud_credentials,
+    keycloak_provider_context,
+    kubernetes_provider_context,
+    timer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +19,7 @@ logger = logging.getLogger(__name__)
 def provision_01_terraform_state(stage_outputs, config):
     directory = "stages/01-terraform-state"
 
-    if config["provider"] == "local":
+    if config["provider"] in {"existing", "local"}:
         stage_outputs[directory] = {}
     else:
         stage_outputs[directory] = terraform.deploy(
@@ -32,10 +30,10 @@ def provision_01_terraform_state(stage_outputs, config):
         )
 
 
-def provision_02_infrastructure(stage_outputs, config, check=True):
+def provision_02_infrastructure(stage_outputs, config, disable_checks=False):
     """Generalized method to provision infrastructure
 
-    After succesfull deployment the following properties are set on
+    After successful deployment the following properties are set on
     `stage_outputs[directory]`.
       - `kubernetes_credentials` which are sufficient credentials to
         connect with the kubernetes provider
@@ -54,11 +52,11 @@ def provision_02_infrastructure(stage_outputs, config, check=True):
         input_vars=input_vars.stage_02_infrastructure(stage_outputs, config),
     )
 
-    if check:
+    if not disable_checks:
         checks.stage_02_infrastructure(stage_outputs, config)
 
 
-def provision_03_kubernetes_initialize(stage_outputs, config, check=True):
+def provision_03_kubernetes_initialize(stage_outputs, config, disable_checks=False):
     directory = "stages/03-kubernetes-initialize"
 
     stage_outputs[directory] = terraform.deploy(
@@ -66,11 +64,11 @@ def provision_03_kubernetes_initialize(stage_outputs, config, check=True):
         input_vars=input_vars.stage_03_kubernetes_initialize(stage_outputs, config),
     )
 
-    if check:
+    if not disable_checks:
         checks.stage_03_kubernetes_initialize(stage_outputs, config)
 
 
-def provision_04_kubernetes_ingress(stage_outputs, config, check=True):
+def provision_04_kubernetes_ingress(stage_outputs, config, disable_checks=False):
     directory = "stages/04-kubernetes-ingress"
 
     stage_outputs[directory] = terraform.deploy(
@@ -78,7 +76,7 @@ def provision_04_kubernetes_ingress(stage_outputs, config, check=True):
         input_vars=input_vars.stage_04_kubernetes_ingress(stage_outputs, config),
     )
 
-    if check:
+    if not disable_checks:
         checks.stage_04_kubernetes_ingress(stage_outputs, config)
 
 
@@ -99,7 +97,7 @@ def provision_ingress_dns(
     dns_provider: str,
     dns_auto_provision: bool,
     disable_prompt: bool = True,
-    check: bool = True,
+    disable_checks: bool = False,
 ):
     directory = "stages/04-kubernetes-ingress"
 
@@ -132,11 +130,11 @@ def provision_ingress_dns(
             f'"{config["domain"]}" [Press Enter when Complete]'
         )
 
-    if check:
+    if not disable_checks:
         checks.check_ingress_dns(stage_outputs, config, disable_prompt)
 
 
-def provision_05_kubernetes_keycloak(stage_outputs, config, check=True):
+def provision_05_kubernetes_keycloak(stage_outputs, config, disable_checks=False):
     directory = "stages/05-kubernetes-keycloak"
 
     stage_outputs[directory] = terraform.deploy(
@@ -144,11 +142,13 @@ def provision_05_kubernetes_keycloak(stage_outputs, config, check=True):
         input_vars=input_vars.stage_05_kubernetes_keycloak(stage_outputs, config),
     )
 
-    if check:
+    if not disable_checks:
         checks.stage_05_kubernetes_keycloak(stage_outputs, config)
 
 
-def provision_06_kubernetes_keycloak_configuration(stage_outputs, config, check=True):
+def provision_06_kubernetes_keycloak_configuration(
+    stage_outputs, config, disable_checks=False
+):
     directory = "stages/06-kubernetes-keycloak-configuration"
 
     stage_outputs[directory] = terraform.deploy(
@@ -158,11 +158,11 @@ def provision_06_kubernetes_keycloak_configuration(stage_outputs, config, check=
         ),
     )
 
-    if check:
+    if not disable_checks:
         checks.stage_06_kubernetes_keycloak_configuration(stage_outputs, config)
 
 
-def provision_07_kubernetes_services(stage_outputs, config, check=True):
+def provision_07_kubernetes_services(stage_outputs, config, disable_checks=False):
     directory = "stages/07-kubernetes-services"
 
     stage_outputs[directory] = terraform.deploy(
@@ -170,11 +170,11 @@ def provision_07_kubernetes_services(stage_outputs, config, check=True):
         input_vars=input_vars.stage_07_kubernetes_services(stage_outputs, config),
     )
 
-    if check:
+    if not disable_checks:
         checks.stage_07_kubernetes_services(stage_outputs, config)
 
 
-def provision_08_qhub_tf_extensions(stage_outputs, config, check=True):
+def provision_08_qhub_tf_extensions(stage_outputs, config, disable_checks=False):
     directory = "stages/08-qhub-tf-extensions"
 
     stage_outputs[directory] = terraform.deploy(
@@ -182,7 +182,7 @@ def provision_08_qhub_tf_extensions(stage_outputs, config, check=True):
         input_vars=input_vars.stage_08_qhub_tf_extensions(stage_outputs, config),
     )
 
-    if check:
+    if not disable_checks:
         pass
 
 
@@ -191,42 +191,49 @@ def guided_install(
     dns_provider,
     dns_auto_provision,
     disable_prompt=False,
+    disable_checks=False,
     skip_remote_state_provision=False,
 ):
     # 01 Check Environment Variables
     check_cloud_credentials(config)
 
     stage_outputs = {}
-    if config["provider"] != "local" and config["terraform_state"]["type"] == "remote":
+    if (
+        config["provider"] not in {"existing", "local"}
+        and config["terraform_state"]["type"] == "remote"
+    ):
         if skip_remote_state_provision:
             print("Skipping remote state provision")
         else:
             provision_01_terraform_state(stage_outputs, config)
 
-    provision_02_infrastructure(stage_outputs, config)
+    provision_02_infrastructure(stage_outputs, config, disable_checks)
 
     with kubernetes_provider_context(
         stage_outputs["stages/02-infrastructure"]["kubernetes_credentials"]["value"]
     ):
-        provision_03_kubernetes_initialize(stage_outputs, config)
-        provision_04_kubernetes_ingress(stage_outputs, config)
+        provision_03_kubernetes_initialize(stage_outputs, config, disable_checks)
+        provision_04_kubernetes_ingress(stage_outputs, config, disable_checks)
         provision_ingress_dns(
             stage_outputs,
             config,
             dns_provider=dns_provider,
             dns_auto_provision=dns_auto_provision,
             disable_prompt=disable_prompt,
+            disable_checks=disable_checks,
         )
-        provision_05_kubernetes_keycloak(stage_outputs, config)
+        provision_05_kubernetes_keycloak(stage_outputs, config, disable_checks)
 
         with keycloak_provider_context(
             stage_outputs["stages/05-kubernetes-keycloak"]["keycloak_credentials"][
                 "value"
             ]
         ):
-            provision_06_kubernetes_keycloak_configuration(stage_outputs, config)
-            provision_07_kubernetes_services(stage_outputs, config)
-            provision_08_qhub_tf_extensions(stage_outputs, config)
+            provision_06_kubernetes_keycloak_configuration(
+                stage_outputs, config, disable_checks
+            )
+            provision_07_kubernetes_services(stage_outputs, config, disable_checks)
+            provision_08_qhub_tf_extensions(stage_outputs, config, disable_checks)
 
             print("QHub deployed successfully")
 
@@ -237,11 +244,15 @@ def guided_install(
         print(f" - {service_name} -> {service['url']}")
 
     print(
-        f"Kubenetes kubeconfig located at file://{stage_outputs['stages/02-infrastructure']['kubeconfig_filename']['value']}"
+        f"Kubernetes kubeconfig located at file://{stage_outputs['stages/02-infrastructure']['kubeconfig_filename']['value']}"
     )
-    print(
-        f"Kubecloak master realm username={stage_outputs['stages/05-kubernetes-keycloak']['keycloak_credentials']['value']['username']} password=file://{os.path.join(tempfile.gettempdir(), 'QHUB_DEFAULT_PASSWORD')}"
+    username = "root"
+    password = (
+        config.get("security", {}).get("keycloak", {}).get("initial_root_password", "")
     )
+    if password:
+        print(f"Kubecloak master realm username={username} password={password}")
+
     print(
         "Additional administration docs can be found at https://docs.qhub.dev/en/stable/source/admin_guide/"
     )
@@ -252,6 +263,7 @@ def deploy_configuration(
     dns_provider,
     dns_auto_provision,
     disable_prompt,
+    disable_checks,
     skip_remote_state_provision,
 ):
     if config.get("prevent_deploy", False):
@@ -274,6 +286,11 @@ def deploy_configuration(
 
     logger.info(f'All qhub endpoints will be under https://{config["domain"]}')
 
+    if disable_checks:
+        logger.warning(
+            "The validation checks at the end of each stage have been disabled"
+        )
+
     with timer(logger, "deploying QHub"):
         try:
             guided_install(
@@ -281,6 +298,7 @@ def deploy_configuration(
                 dns_provider,
                 dns_auto_provision,
                 disable_prompt,
+                disable_checks,
                 skip_remote_state_provision,
             )
         except subprocess.CalledProcessError as e:

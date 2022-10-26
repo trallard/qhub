@@ -22,6 +22,7 @@
         pythonPackages.bcrypt
         pythonPackages.kubernetes
         pythonPackages.packaging
+        pythonPackages.rich
         keycloak
 
         # cloud packages
@@ -33,13 +34,19 @@
       devDependencies = [
         # development
         pythonPackages.pytest
+        pythonPackages.pytest-timeout
         pythonPackages.black
         pythonPackages.flake8
         pythonPackages.sphinx
+        pythonPackages.dask-gateway
+        pythonPackages.paramiko
+        pythonPackages.escapism
+        pythonPackages.isort
 
         # additional
         pkgs.minikube
         pkgs.k9s
+        pkgs.expect
       ];
     in rec {
       defaultApp.x86_64-linux = pythonPackages.buildPythonPackage {

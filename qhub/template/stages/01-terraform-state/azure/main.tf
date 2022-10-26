@@ -30,17 +30,17 @@ provider "azurerm" {
 module "terraform-state" {
   source = "./modules/terraform-state"
 
-  name                          = "${var.name}-${var.namespace}"
-  resource_group_name           = var.state_resource_group_name
-  location                      = var.region
-  storage_account_postfix       = var.storage_account_postfix
+  name                    = "${var.name}-${var.namespace}"
+  resource_group_name     = var.state_resource_group_name
+  location                = var.region
+  storage_account_postfix = var.storage_account_postfix
 }
 
 terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "=2.44.0"
+      version = "=3.22.0"
     }
   }
   required_version = ">= 1.0"

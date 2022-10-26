@@ -10,15 +10,18 @@ variable "environment" {
 
 variable "node_groups" {
   description = "Node group selectors for kubernetes resources"
-  type        = map(object({
-    key = string
+  type = map(object({
+    key   = string
     value = string
   }))
 }
 
-variable "enable-certificates" {
-  description = "Enable certificates"
-  default     = false
+variable "traefik-image" {
+  description = "traefik image to use"
+  type = object({
+    image = string
+    tag   = string
+  })
 }
 
 variable "acme-email" {
@@ -37,4 +40,32 @@ variable "acme-server" {
 variable "certificate-secret-name" {
   description = "Kubernetes secret used for certificate"
   default     = ""
+}
+
+
+variable "load-balancer-ip" {
+  description = "IP Address of the load balancer"
+  type        = string
+  default     = null
+}
+
+
+variable "load-balancer-annotations" {
+  description = "Annotations for the load balancer"
+  type        = map(string)
+  default     = null
+}
+
+
+variable "certificate-service" {
+  description = "The certificate service to use"
+  type        = string
+  default     = "self-signed"
+}
+
+
+variable "additional-arguments" {
+  description = "Additional command line arguments to supply to traefik ingress"
+  type        = list(string)
+  default     = []
 }

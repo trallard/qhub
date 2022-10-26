@@ -1,24 +1,29 @@
-import os
 import base64
-
-from typing import Optional, Dict, List, Union
-
-from pydantic import BaseModel, Field
+import os
+import re
+from typing import Dict, List, Optional, Union
 
 import requests
 from nacl import encoding, public
+from pydantic import BaseModel, Field
 
-from qhub.utils import pip_install_qhub
+from qhub.constants import LATEST_SUPPORTED_PYTHON_VERSION
+from qhub.provider.cicd.common import pip_install_qhub
+
+GITHUB_BASE_URL = "https://api.github.com/"
 
 
-def github_request(url, method="GET", json=None):
-    GITHUB_BASE_URL = "https://api.github.com/"
-
-    for name in ("GITHUB_USERNAME", "GITHUB_TOKEN"):
-        if os.environ.get(name) is None:
-            raise ValueError(
-                f"environment variable={name} is required for github automation"
-            )
+def github_request(url, method="GET", json=None, authenticate=True):
+    auth = None
+    if authenticate:
+        for name in ("GITHUB_USERNAME", "GITHUB_TOKEN"):
+            if os.environ.get(name) is None:
+                raise ValueError(
+                    f"Environment variable={name} is required for GitHub automation"
+                )
+        auth = requests.auth.HTTPBasicAuth(
+            os.environ["GITHUB_USERNAME"], os.environ["GITHUB_TOKEN"]
+        )
 
     method_map = {
         "GET": requests.get,
@@ -29,9 +34,7 @@ def github_request(url, method="GET", json=None):
     response = method_map[method](
         f"{GITHUB_BASE_URL}{url}",
         json=json,
-        auth=requests.auth.HTTPBasicAuth(
-            os.environ["GITHUB_USERNAME"], os.environ["GITHUB_TOKEN"]
-        ),
+        auth=auth,
     )
     response.raise_for_status()
     return response
@@ -62,6 +65,25 @@ def update_secret(owner, repo, secret_name, secret_value):
 
 def get_repository(owner, repo):
     return github_request(f"repos/{owner}/{repo}").json()
+
+
+def get_repo_tags(owner, repo):
+    return github_request(f"repos/{owner}/{repo}/tags", authenticate=False).json()
+
+
+def get_latest_repo_tag(owner: str, repo: str, only_clean_tags: bool = True) -> str:
+    """
+    Get the latest available tag on GitHub for owner/repo.
+
+    NOTE: Set `only_clean_tags=False` to include dev / pre-release (if latest).
+    """
+    tags = get_repo_tags(owner, repo)
+    if not only_clean_tags and len(tags) >= 1:
+        return tags[0].get("name")
+    for t in tags:
+        rel = list(filter(None, re.sub(r"[A-Za-z]", " ", t["name"]).split(" ")))
+        if len(rel) == 1:
+            return t.get("name")
 
 
 def create_repository(owner, repo, description, homepage, private=True):
@@ -95,6 +117,15 @@ def gha_env_vars(config):
         "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
     }
 
+    if os.environ.get("QHUB_GH_BRANCH"):
+        env_vars["QHUB_GH_BRANCH"] = "${{ secrets.QHUB_GH_BRANCH }}"
+
+    # This assumes that the user is using the omitting sensitive values configuration for the token.
+    if config.get("prefect", {}).get("enabled", False):
+        env_vars[
+            "QHUB_SECRET_prefect_token"
+        ] = "${{ secrets.QHUB_SECRET_PREFECT_TOKEN }}"
+
     if config["provider"] == "aws":
         env_vars["AWS_ACCESS_KEY_ID"] = "${{ secrets.AWS_ACCESS_KEY_ID }}"
         env_vars["AWS_SECRET_ACCESS_KEY"] = "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
@@ -112,7 +143,7 @@ def gha_env_vars(config):
         env_vars["DIGITALOCEAN_TOKEN"] = "${{ secrets.DIGITALOCEAN_TOKEN }}"
     elif config["provider"] == "gcp":
         env_vars["GOOGLE_CREDENTIALS"] = "${{ secrets.GOOGLE_CREDENTIALS }}"
-    elif config["provider"] == "local":
+    elif config["provider"] in ["local", "existing"]:
         # create mechanism to allow for extra env vars?
         pass
     else:
@@ -184,8 +215,6 @@ class QhubLinter(GHA):
 
 ### GITHUB ACTION WORKFLOWS ###
 
-PYTHON_VERSION = 3.8
-
 
 def checkout_image_step():
     return GHA_job_step(
@@ -203,7 +232,11 @@ def setup_python_step():
     return GHA_job_step(
         name="Set up Python",
         uses="actions/setup-python@v2",
-        with_={"python-version": GHA_job_steps_extras(__root__=PYTHON_VERSION)},
+        with_={
+            "python-version": GHA_job_steps_extras(
+                __root__=LATEST_SUPPORTED_PYTHON_VERSION
+            )
+        },
     )
 
 
@@ -215,6 +248,7 @@ def gen_qhub_ops(config):
 
     env_vars = gha_env_vars(config)
     branch = config["ci_cd"]["branch"]
+    commit_render = config["ci_cd"].get("commit_render", True)
     qhub_version = config["qhub_version"]
 
     push = GHA_on_extras(branches=[branch], paths=["qhub-config.yaml"])
@@ -245,9 +279,11 @@ def gen_qhub_ops(config):
         },
     )
 
-    job1 = GHA_job_id(
-        name="qhub", runs_on_="ubuntu-latest", steps=[step1, step2, step3, step4, step5]
-    )
+    gha_steps = [step1, step2, step3, step4]
+    if commit_render:
+        gha_steps.append(step5)
+
+    job1 = GHA_job_id(name="qhub", runs_on_="ubuntu-latest", steps=gha_steps)
     jobs = GHA_jobs(__root__={"build": job1})
 
     return QhubOps(
@@ -263,7 +299,7 @@ def gen_qhub_linter(config):
     env_vars = {}
     qhub_gh_branch = os.environ.get("QHUB_GH_BRANCH")
     if qhub_gh_branch:
-        env_vars["QHUB_GH_BRANCH"] = qhub_gh_branch
+        env_vars["QHUB_GH_BRANCH"] = "${{ secrets.QHUB_GH_BRANCH }}"
     else:
         env_vars = None
 

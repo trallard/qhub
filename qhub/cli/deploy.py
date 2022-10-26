@@ -1,9 +1,9 @@
-import pathlib
 import logging
+import pathlib
 
 from qhub.deploy import deploy_configuration
-from qhub.schema import verify
 from qhub.render import render_template
+from qhub.schema import verify
 from qhub.utils import load_yaml
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,11 @@ def create_deploy_subcommand(subparser):
         action="store_true",
         help="Disable auto-rendering in deploy stage",
     )
+    subparser.add_argument(
+        "--disable-checks",
+        action="store_true",
+        help="Disable the checks performed after each stage",
+    )
     subparser.set_defaults(func=handle_deploy)
 
 
@@ -62,5 +67,6 @@ def handle_deploy(args):
         args.dns_provider,
         args.dns_auto_provision,
         args.disable_prompt,
+        args.disable_checks,
         args.skip_remote_state_provision,
     )
